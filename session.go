@@ -15,7 +15,7 @@ import (
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/tomb.v2"
 
-	"github.com/juju/zapctx"
+	"github.com/juju/zaputil/zapctx"
 )
 
 const pingInterval = 1 * time.Second
