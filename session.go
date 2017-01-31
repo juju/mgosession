@@ -6,16 +6,13 @@
 package mgosession
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/juju/utils/clock"
-	"github.com/uber-go/zap"
-	"golang.org/x/net/context"
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/tomb.v2"
-
-	"github.com/juju/zaputil/zapctx"
 )
 
 const pingInterval = 1 * time.Second
@@ -44,15 +41,31 @@ type Pool struct {
 	closed bool
 }
 
+// Logger is used by mgosession to log information about sessions.
+type Logger interface {
+	// Debug logs a message at debug level.
+	Debug(message string)
+	// Info logs a message at info level.
+	Info(message string)
+}
+
 // NewPool returns a session pool that maintains a maximum
 // of maxSessions sessions available for reuse.
-func NewPool(ctx context.Context, s *mgo.Session, maxSessions int) *Pool {
+//
+// All the sessions will be coped (with Session.Copy) from s.
+//
+// The logger is used to log informational messages about the pool
+// and may be nil if no logging is required.
+func NewPool(logger Logger, s *mgo.Session, maxSessions int) *Pool {
+	if logger == nil {
+		logger = nullLogger{}
+	}
 	p := &Pool{
 		sessions: make([]*mgo.Session, maxSessions),
 		session:  s.Copy(),
 	}
 	p.tomb.Go(func() error {
-		return p.pinger(ctx)
+		return p.pinger(logger)
 	})
 	return p
 }
@@ -66,14 +79,14 @@ func NewPool(ctx context.Context, s *mgo.Session, maxSessions int) *Pool {
 // If there was an IsDead method on mgo.Session,
 // this would be unnecessary (as would Reset).
 // See https://github.com/go-mgo/mgo/issues/124.
-func (p *Pool) pinger(ctx context.Context) error {
+func (p *Pool) pinger(logger Logger) error {
 	for {
 		select {
 		case <-p.tomb.Dying():
 			return nil
 		case <-Clock.After(pingInterval):
 		}
-		session := p.Session(ctx)
+		session := p.Session(logger)
 		if session.Ping() != nil {
 			p.Reset()
 		}
@@ -85,8 +98,14 @@ func (p *Pool) pinger(ctx context.Context) error {
 // reuse an existing session that has not been marked
 // with DoNotReuse.
 //
+// The logger is used to log requests associated with
+// the session request and may be nil if no logging is required.
+//
 // Session may be called concurrently.
-func (p *Pool) Session(ctx context.Context) *mgo.Session {
+func (p *Pool) Session(logger Logger) *mgo.Session {
+	if logger == nil {
+		logger = nullLogger{}
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
@@ -94,7 +113,7 @@ func (p *Pool) Session(ctx context.Context) *mgo.Session {
 	}
 	s := p.sessions[p.sessionIndex]
 	if s == nil {
-		zapctx.Info(ctx, "creating new session", zap.Int("index", p.sessionIndex))
+		logger.Info(fmt.Sprintf("creating new session; index %d", p.sessionIndex))
 		s = p.session.Copy()
 		// Ping the session so that we're sure that the returned session
 		// is attached to a mongodb socket otherwise we won't
@@ -104,7 +123,7 @@ func (p *Pool) Session(ctx context.Context) *mgo.Session {
 		s.Ping()
 		p.sessions[p.sessionIndex] = s
 	} else {
-		zapctx.Debug(ctx, "reusing session", zap.Int("index", p.sessionIndex))
+		logger.Debug(fmt.Sprintf("reusing session; index %d", p.sessionIndex))
 	}
 	p.sessionIndex = (p.sessionIndex + 1) % len(p.sessions)
 	return s.Clone()
@@ -143,3 +162,10 @@ func (p *Pool) closeSessions() {
 		}
 	}
 }
+
+// nullLogger implements Logger by doing nothing.
+type nullLogger struct{}
+
+func (nullLogger) Debug(string) {}
+
+func (nullLogger) Info(string) {}
