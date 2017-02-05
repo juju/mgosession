@@ -133,14 +133,15 @@ func (p *Pool) Session(logger Logger) *mgo.Session {
 // Pool methods, but once called, a call to Session will panic.
 func (p *Pool) Close() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if p.closed {
+		p.mu.Unlock()
 		return
 	}
 	p.tomb.Kill(nil)
 	p.closed = true
 	p.closeSessions()
 	p.session.Close()
+	p.mu.Unlock()
 	p.tomb.Wait()
 }
 
