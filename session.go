@@ -132,16 +132,20 @@ func (p *Pool) Session(logger Logger) *mgo.Session {
 // Close closes the pool. It may be called concurrently with other
 // Pool methods, but once called, a call to Session will panic.
 func (p *Pool) Close() {
+	// First stop the pinger so that it won't
+	// ask for any sessions after we're closed.
+	p.tomb.Kill(nil)
+	p.tomb.Wait()
+
+	// Then close everything down.
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
 		return
 	}
-	p.tomb.Kill(nil)
 	p.closed = true
 	p.closeSessions()
 	p.session.Close()
-	p.tomb.Wait()
 }
 
 // Reset resets the session pool so that no existing
