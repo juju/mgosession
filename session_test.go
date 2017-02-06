@@ -64,6 +64,22 @@ func (s *suite) TestSession(c *gc.C) {
 	c.Assert(s4.Ping(), gc.IsNil)
 }
 
+func (s *suite) TestMaxZeroSessions(c *gc.C) {
+	pool := mgosession.NewPool(nil, s.Session, 0)
+	defer pool.Close()
+
+	defer func() {
+		if r := recover(); r != nil {
+			c.Fatalf("test panicked: %v", r)
+		}
+	}()
+
+	// This must not panic
+	s0 := pool.Session(nil)
+	defer s0.Close()
+	c.Assert(s0.Ping(), gc.IsNil)
+}
+
 func (s *suite) TestClosingPoolDoesNotClosePreviousSessions(c *gc.C) {
 	pool := mgosession.NewPool(nil, s.Session, 2)
 	session := pool.Session(nil)
