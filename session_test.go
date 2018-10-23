@@ -5,6 +5,7 @@ package mgosession_test
 import (
 	"time"
 
+	"github.com/juju/clock/testclock"
 	jujutesting "github.com/juju/testing"
 	gc "gopkg.in/check.v1"
 
@@ -74,7 +75,7 @@ func (s *suite) TestClosingPoolDoesNotClosePreviousSessions(c *gc.C) {
 
 func (s *suite) TestSessionPinger(c *gc.C) {
 	t0 := time.Now()
-	clock := jujutesting.NewClock(t0)
+	clock := testclock.NewClock(t0)
 	s.PatchValue(&mgosession.Clock, clock)
 
 	psession := jujutesting.NewProxiedSession(c)

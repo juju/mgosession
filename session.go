@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/juju/utils/clock"
+	"github.com/juju/clock"
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/tomb.v2"
 )
