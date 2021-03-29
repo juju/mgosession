@@ -60,6 +60,9 @@ func NewPool(logger Logger, s *mgo.Session, maxSessions int) *Pool {
 	if logger == nil {
 		logger = nullLogger{}
 	}
+	if maxSessions < 1 {
+		maxSessions = 1
+	}
 	p := &Pool{
 		sessions: make([]*mgo.Session, maxSessions),
 		session:  s.Copy(),
