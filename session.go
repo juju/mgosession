@@ -6,13 +6,13 @@
 package mgosession
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/juju/clock"
-	mgo "gopkg.in/mgo.v2"
-	"gopkg.in/tomb.v2"
+	mgo "github.com/juju/mgo/v2"
 )
 
 const pingInterval = 1 * time.Second
@@ -21,7 +21,8 @@ var Clock clock.Clock = clock.WallClock
 
 // Pool represents a pool of mgo sessions.
 type Pool struct {
-	tomb tomb.Tomb
+	pingerCancel func()
+	pingerWG     sync.WaitGroup
 
 	// mu guards the fields below it.
 	mu sync.Mutex
@@ -67,9 +68,10 @@ func NewPool(logger Logger, s *mgo.Session, maxSessions int) *Pool {
 		sessions: make([]*mgo.Session, maxSessions),
 		session:  s.Copy(),
 	}
-	p.tomb.Go(func() error {
-		return p.pinger(logger)
-	})
+	ctx, cancel := context.WithCancel(context.Background())
+	p.pingerCancel = cancel
+	p.pingerWG.Add(1)
+	go p.pinger(ctx, logger)
 	return p
 }
 
@@ -82,11 +84,12 @@ func NewPool(logger Logger, s *mgo.Session, maxSessions int) *Pool {
 // If there was an IsDead method on mgo.Session,
 // this would be unnecessary (as would Reset).
 // See https://github.com/go-mgo/mgo/issues/124.
-func (p *Pool) pinger(logger Logger) error {
+func (p *Pool) pinger(ctx context.Context, logger Logger) {
+	defer p.pingerWG.Done()
 	for {
 		select {
-		case <-p.tomb.Dying():
-			return nil
+		case <-ctx.Done():
+			return
 		case <-Clock.After(pingInterval):
 		}
 		session := p.Session(logger)
@@ -137,8 +140,8 @@ func (p *Pool) Session(logger Logger) *mgo.Session {
 func (p *Pool) Close() {
 	// First stop the pinger so that it won't
 	// ask for any sessions after we're closed.
-	p.tomb.Kill(nil)
-	p.tomb.Wait()
+	p.pingerCancel()
+	p.pingerWG.Wait()
 
 	// Then close everything down.
 	p.mu.Lock()
